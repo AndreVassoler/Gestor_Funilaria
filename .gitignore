@@ -1,0 +1,7 @@
+# Raiz do monorepo — complementa backend/.gitignore e frontend/.gitignore
+.DS_Store
+Thumbs.db
+*.log
+.idea
+.vscode/*
+!.vscode/extensions.json
