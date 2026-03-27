@@ -1,14 +1,22 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { MarcaModeloFields } from '../components/MarcaModeloFields'
 import { API_BASE } from '../config/api'
 import { hojeInputDate, inputClass } from '../constants/ordemUi'
+import type { PrefillAgendamentoParaOrdem } from '../types/agendamento'
 import * as F from '../utils/ordemForm'
+
+type LocationAgendamento = {
+  agendamento?: PrefillAgendamentoParaOrdem
+}
 
 export function NovaOrdemPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const agendamentoParaVincular = useRef<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [msgAgenda, setMsgAgenda] = useState<string | null>(null)
   const [form, setForm] = useState({
     cliente: '',
     contato: '',
@@ -21,6 +29,33 @@ export function NovaOrdemPage() {
     dataAbertura: hojeInputDate(),
     previsaoEntrega: '',
   })
+
+  useEffect(() => {
+    const st = location.state as LocationAgendamento | null
+    const pre = st?.agendamento
+    if (!pre) return
+    agendamentoParaVincular.current = pre.agendamentoId
+    setMsgAgenda(
+      `Campos preenchidos a partir do agendamento #${pre.agendamentoId}. Ao salvar, a vaga será marcada como finalizada e ligada à OS.`,
+    )
+    setForm((f) => ({
+      ...f,
+      cliente: pre.cliente || f.cliente,
+      contato: pre.contato || f.contato,
+      placa: pre.placa || f.placa,
+      marca: pre.marca || f.marca,
+      modelo: pre.modelo || f.modelo,
+      ano:
+        pre.ano != null
+          ? String(pre.ano)
+          : f.ano,
+      descricao:
+        pre.observacoes?.trim() !== ''
+          ? pre.observacoes
+          : f.descricao,
+    }))
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.state, location.pathname, navigate])
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -78,7 +113,31 @@ export function NovaOrdemPage() {
           b?.message?.[0] ?? `Não foi possível cadastrar (${res.status})`,
         )
       }
-      navigate('/?status=aberto')
+      const created = (await res.json()) as { id: number }
+      const aid = agendamentoParaVincular.current
+      if (aid != null) {
+        try {
+          await fetch(`${API_BASE}/agendamentos/${aid}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ordemId: created.id,
+              status: 'finalizado',
+            }),
+          })
+        } catch {
+          /* vinculação é opcional; OS já foi criada */
+        }
+        agendamentoParaVincular.current = null
+      }
+      const flashKey = `${created.id}-${Date.now()}`
+      navigate('/?status=aberto', {
+        state: {
+          ordemCriada: true,
+          ordemId: created.id,
+          flashKey,
+        },
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao cadastrar')
     } finally {
@@ -94,6 +153,15 @@ export function NovaOrdemPage() {
           className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200"
         >
           {error}
+        </div>
+      )}
+
+      {msgAgenda && (
+        <div
+          role="status"
+          className="mb-6 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-100"
+        >
+          {msgAgenda}
         </div>
       )}
 

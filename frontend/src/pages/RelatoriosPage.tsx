@@ -1,4 +1,14 @@
 import { useMemo, useState } from 'react'
+import { RelatoriosAnaliseDetalhada } from '../components/RelatoriosAnaliseDetalhada'
+import { RelatoriosDashboard } from '../components/RelatoriosDashboard'
+import { API_BASE } from '../config/api'
+import { inputClass, STATUS_LABEL } from '../constants/ordemUi'
+import { useOrdensList } from '../hooks/useOrdensList'
+import type { OrdemServicoStatus } from '../types/ordem'
+import {
+  downloadAttachmentFromUrl,
+  downloadPdfFromUrl,
+} from '../utils/pdfDownload'
 
 const MESES = [
   { value: 1, label: 'Janeiro' },
@@ -14,21 +24,19 @@ const MESES = [
   { value: 11, label: 'Novembro' },
   { value: 12, label: 'Dezembro' },
 ] as const
-import { RelatoriosDashboard } from '../components/RelatoriosDashboard'
-import { inputClass } from '../constants/ordemUi'
-import { API_BASE } from '../config/api'
-import { useOrdensList } from '../hooks/useOrdensList'
-import type { OrdemServicoStatus } from '../types/ordem'
-import {
-  downloadAttachmentFromUrl,
-  downloadPdfFromUrl,
-} from '../utils/pdfDownload'
-import * as F from '../utils/ordemForm'
+
+type ExportInFlight =
+  | null
+  | 'fiscal'
+  | 'pdf-tela'
+  | 'pdf-todos'
+  | 'pdf-status'
 
 export function RelatoriosPage() {
   const [filtCliente, setFiltCliente] = useState('')
   const [filtPlaca, setFiltPlaca] = useState('')
   const [filtStatus, setFiltStatus] = useState<'' | OrdemServicoStatus>('')
+
   const [exportPdfStatus, setExportPdfStatus] =
     useState<OrdemServicoStatus>('aberto')
 
@@ -42,6 +50,8 @@ export function RelatoriosPage() {
     () => new Date().getMonth() + 1,
   )
   const [fiscalFormato, setFiscalFormato] = useState<'pdf' | 'xlsx'>('pdf')
+  const [exportInFlight, setExportInFlight] = useState<ExportInFlight>(null)
+  const exportBusy = exportInFlight !== null
 
   const anosSelect = useMemo(() => {
     const y = new Date().getFullYear()
@@ -57,20 +67,16 @@ export function RelatoriosPage() {
     [filtCliente, filtPlaca, filtStatus],
   )
 
+  const filtrosAtivos =
+    filtCliente.trim() !== '' || filtPlaca.trim() !== '' || filtStatus !== ''
+
   const { ordens, error, setError, resumo, load, loading } = useOrdensList(
     API_BASE,
     filters,
   )
 
-  function buildExportPdfQuery(
-    mode: 'filtro' | 'todos' | 'status' | 'tela',
-  ): string {
+  function buildExportPdfQuery(mode: 'todos' | 'status' | 'tela'): string {
     const q = new URLSearchParams()
-    if (mode === 'filtro') {
-      if (filtCliente.trim()) q.set('cliente', filtCliente.trim())
-      if (filtPlaca.trim()) q.set('placa', filtPlaca.trim())
-      if (filtStatus) q.set('status', filtStatus)
-    }
     if (mode === 'status') q.set('status', exportPdfStatus)
     if (mode === 'tela' && ordens.length)
       q.set('ids', ordens.map((o) => o.id).join(','))
@@ -78,9 +84,13 @@ export function RelatoriosPage() {
   }
 
   async function handleDownloadPdf(
-    mode: 'filtro' | 'todos' | 'status' | 'tela',
+    mode: 'todos' | 'status' | 'tela',
     fallbackName: string,
   ) {
+    const key: ExportInFlight =
+      mode === 'tela' ? 'pdf-tela' : mode === 'todos' ? 'pdf-todos' : 'pdf-status'
+    if (exportBusy) return
+    setExportInFlight(key)
     setError(null)
     try {
       const qs = buildExportPdfQuery(mode)
@@ -88,10 +98,14 @@ export function RelatoriosPage() {
       await downloadPdfFromUrl(url, fallbackName)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao baixar PDF')
+    } finally {
+      setExportInFlight(null)
     }
   }
 
   async function handleDownloadFiscal() {
+    if (exportBusy) return
+    setExportInFlight('fiscal')
     setError(null)
     try {
       const q = new URLSearchParams()
@@ -117,13 +131,9 @@ export function RelatoriosPage() {
       setError(
         e instanceof Error ? e.message : 'Erro ao baixar relatório fiscal',
       )
+    } finally {
+      setExportInFlight(null)
     }
-  }
-
-  function limparFiltros() {
-    setFiltCliente('')
-    setFiltPlaca('')
-    setFiltStatus('')
   }
 
   return (
@@ -142,14 +152,93 @@ export function RelatoriosPage() {
           Relatórios e exportação
         </h2>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-indigo-100/90">
-          Dashboard com indicadores da oficina. O relatório fiscal (PDF ou Excel)
-          reúne receita de serviços concluídos e demonstrativo por período para
-          conferência com seu contador. Os PDFs operacionais listam cada OS com
-          detalhes (úteis para oficina, não substituem obrigações fiscais).
+          Painel analítico com filtros, gráficos de série temporal, rankings e
+          tabela completa. O relatório fiscal (PDF ou Excel) reúne receita de
+          serviços concluídos por período para conferência com seu contador. Os
+          PDFs operacionais listam cada OS com detalhes (úteis para oficina, não
+          substituem obrigações fiscais).
         </p>
       </header>
 
+      <section className="mb-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+              Filtros da análise
+            </p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              O dashboard, a análise detalhada e a contagem usada no PDF “OS
+              carregadas” seguem cliente, placa e status abaixo. Deixe em branco
+              para considerar todas as ordens.
+            </p>
+          </div>
+          {filtrosAtivos && (
+            <button
+              type="button"
+              onClick={() => {
+                setFiltCliente('')
+                setFiltPlaca('')
+                setFiltStatus('')
+              }}
+              className="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              Limpar filtros
+            </button>
+          )}
+        </div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:items-end">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-slate-700 dark:text-slate-300">
+              Cliente
+            </span>
+            <input
+              className={inputClass}
+              value={filtCliente}
+              onChange={(e) => setFiltCliente(e.target.value)}
+              placeholder="Nome (contém)"
+              autoComplete="off"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-slate-700 dark:text-slate-300">
+              Placa
+            </span>
+            <input
+              className={inputClass}
+              value={filtPlaca}
+              onChange={(e) => setFiltPlaca(e.target.value)}
+              placeholder="Parcial"
+              autoComplete="off"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-slate-700 dark:text-slate-300">
+              Status
+            </span>
+            <select
+              className={inputClass}
+              value={filtStatus}
+              onChange={(e) =>
+                setFiltStatus(e.target.value as '' | OrdemServicoStatus)
+              }
+            >
+              <option value="">Todos</option>
+              <option value="aberto">{STATUS_LABEL.aberto}</option>
+              <option value="fazendo">{STATUS_LABEL.fazendo}</option>
+              <option value="pronto">{STATUS_LABEL.pronto}</option>
+            </select>
+          </label>
+          <p className="text-xs text-slate-500 dark:text-slate-400 lg:pb-2">
+            {loading
+              ? 'Carregando…'
+              : `${ordens.length} ${ordens.length === 1 ? 'ordem' : 'ordens'} na listagem`}
+          </p>
+        </div>
+      </section>
+
       <RelatoriosDashboard resumo={resumo} loading={loading} />
+
+      <RelatoriosAnaliseDetalhada ordens={ordens} loading={loading} />
 
       <section className="mb-8 rounded-xl border border-indigo-200/80 bg-linear-to-br from-indigo-50/90 via-white to-slate-50 p-5 shadow-sm dark:border-indigo-900/40 dark:from-indigo-950/35 dark:via-slate-900 dark:to-slate-950/80">
         <p className="text-sm font-semibold text-indigo-950 dark:text-indigo-100">
@@ -234,77 +323,12 @@ export function RelatoriosPage() {
           <button
             type="button"
             onClick={() => void handleDownloadFiscal()}
-            className="rounded-lg bg-indigo-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-800 dark:bg-indigo-600 dark:hover:bg-indigo-500"
+            disabled={exportBusy}
+            className="rounded-lg bg-indigo-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-600 dark:hover:bg-indigo-500"
           >
-            Baixar relatório fiscal
+            {exportInFlight === 'fiscal' ? 'Baixando…' : 'Baixar relatório fiscal'}
           </button>
         </div>
-      </section>
-
-      <section className="mb-8 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-        <p className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-200">
-          Filtros da lista (prévia)
-        </p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-600 dark:text-slate-400">
-              Cliente
-            </span>
-            <input
-              className={inputClass}
-              value={filtCliente}
-              onChange={(e) => setFiltCliente(e.target.value)}
-              placeholder="Nome (contém)"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-600 dark:text-slate-400">
-              Placa
-            </span>
-            <input
-              className={`${inputClass} font-mono uppercase`}
-              value={filtPlaca}
-              onChange={(e) =>
-                setFiltPlaca(F.formatPlaca(e.target.value))
-              }
-              maxLength={8}
-              title="Antigo ou Mercosul; o hífen é só visual — a busca ignora caracteres especiais."
-              placeholder="ABC-1234 ou ABC-1D23"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-600 dark:text-slate-400">
-              Status
-            </span>
-            <select
-              className={inputClass}
-              value={filtStatus}
-              onChange={(e) =>
-                setFiltStatus(e.target.value as '' | OrdemServicoStatus)
-              }
-            >
-              <option value="">Todos</option>
-              <option value="aberto">Aberto</option>
-              <option value="fazendo">Em andamento</option>
-              <option value="pronto">Pronto</option>
-            </select>
-          </label>
-          <div className="flex items-end">
-            <button
-              type="button"
-              onClick={limparFiltros}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              Limpar filtros
-            </button>
-          </div>
-        </div>
-        <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-          Ordens na prévia com filtros atuais:{' '}
-          <span className="font-semibold text-slate-700 dark:text-slate-300">
-            {ordens.length}
-          </span>
-        </p>
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/40">
@@ -319,28 +343,22 @@ export function RelatoriosPage() {
           <button
             type="button"
             onClick={() =>
-              void handleDownloadPdf('filtro', 'ordens-filtradas.pdf')
+              void handleDownloadPdf('tela', 'ordens-na-lista.pdf')
             }
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+            disabled={!ordens.length || exportBusy}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
           >
-            Lista com filtros atuais
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              void handleDownloadPdf('tela', 'ordens-na-tela.pdf')
-            }
-            disabled={!ordens.length}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-          >
-            Só OS visíveis na prévia ({ordens.length})
+            {exportInFlight === 'pdf-tela'
+              ? 'Baixando…'
+              : `PDF com as OS carregadas (${ordens.length})`}
           </button>
           <button
             type="button"
             onClick={() => void handleDownloadPdf('todos', 'todas-ordens.pdf')}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+            disabled={exportBusy}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
           >
-            Todas as OS
+            {exportInFlight === 'pdf-todos' ? 'Baixando…' : 'Todas as OS'}
           </button>
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1 text-xs font-medium text-slate-600 dark:text-slate-400">
@@ -365,9 +383,10 @@ export function RelatoriosPage() {
                   `ordens-${exportPdfStatus}.pdf`,
                 )
               }
-              className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+              disabled={exportBusy}
+              className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
             >
-              Baixar
+              {exportInFlight === 'pdf-status' ? 'Baixando…' : 'Baixar'}
             </button>
           </div>
         </div>

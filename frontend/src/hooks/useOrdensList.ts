@@ -31,11 +31,13 @@ export function useOrdensList(apiBase: string, filters: OrdensListFilters) {
       if (!res.ok) throw new Error('Falha ao carregar ordens')
       const data: OrdemServico[] = await res.json()
       setOrdens(data)
-      const r2 = await fetch(`${apiBase}/ordens-servico/resumo`)
-      if (r2.ok) {
-        setResumo((await r2.json()) as DashboardResumo)
-      }
+      const r2 = await fetch(
+        `${apiBase}/ordens-servico/resumo${qs ? `?${qs}` : ''}`,
+      )
+      if (!r2.ok) throw new Error('Falha ao carregar resumo do dashboard')
+      setResumo((await r2.json()) as DashboardResumo)
     } catch (e) {
+      setResumo(null)
       setError(e instanceof Error ? e.message : 'Erro desconhecido')
     } finally {
       setLoading(false)

@@ -36,6 +36,9 @@ export function Layout() {
             <NavLink to="/nova" className={navClass}>
               Nova ordem
             </NavLink>
+            <NavLink to="/agenda" className={navClass}>
+              Agenda
+            </NavLink>
             <NavLink to="/relatorios" className={navClass}>
               Relatórios
             </NavLink>

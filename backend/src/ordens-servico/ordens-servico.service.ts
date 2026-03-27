@@ -1,8 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { existsSync, rmSync } from 'fs';
 import { join } from 'path';
-import { Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 import { CreateOrdemServicoDto } from './dto/create-ordem-servico.dto';
 import { UpdateOrdemServicoDto } from './dto/update-ordem-servico.dto';
 import { OrdemServico, OrdemServicoStatus } from './ordem-servico.entity';
@@ -20,23 +24,10 @@ export class OrdensServicoService {
     private readonly repo: Repository<OrdemServico>,
   ) {}
 
-  create(dto: CreateOrdemServicoDto): Promise<OrdemServico> {
-    const { dataAbertura, previsaoEntrega, ...rest } = dto;
-    const status = dto.status ?? OrdemServicoStatus.ABERTO;
-    const entity = this.repo.create({
-      ...rest,
-      status,
-      dataAbertura: dataAbertura ? new Date(dataAbertura) : new Date(),
-      previsaoEntrega: previsaoEntrega ? new Date(previsaoEntrega) : null,
-      dataConclusao:
-        status === OrdemServicoStatus.PRONTO ? new Date() : null,
-    });
-    return this.repo.save(entity);
-  }
-
-  findAll(filters?: ListOrdensFilters): Promise<OrdemServico[]> {
-    const qb = this.repo.createQueryBuilder('o');
-
+  private applyListFilters(
+    qb: SelectQueryBuilder<OrdemServico>,
+    filters?: ListOrdensFilters,
+  ): void {
     if (filters?.cliente?.trim()) {
       qb.andWhere('LOWER(o.cliente) LIKE LOWER(:cliente)', {
         cliente: `%${filters.cliente.trim()}%`,
@@ -53,6 +44,25 @@ export class OrdensServicoService {
     if (filters?.status) {
       qb.andWhere('o.status = :status', { status: filters.status });
     }
+  }
+
+  create(dto: CreateOrdemServicoDto): Promise<OrdemServico> {
+    const { dataAbertura, previsaoEntrega, ...rest } = dto;
+    const status = dto.status ?? OrdemServicoStatus.ABERTO;
+    const entity = this.repo.create({
+      ...rest,
+      status,
+      dataAbertura: dataAbertura ? new Date(dataAbertura) : new Date(),
+      previsaoEntrega: previsaoEntrega ? new Date(previsaoEntrega) : null,
+      dataConclusao:
+        status === OrdemServicoStatus.PRONTO ? new Date() : null,
+    });
+    return this.repo.save(entity);
+  }
+
+  findAll(filters?: ListOrdensFilters): Promise<OrdemServico[]> {
+    const qb = this.repo.createQueryBuilder('o');
+    this.applyListFilters(qb, filters);
 
     qb.orderBy('o.previsaoEntrega IS NULL', 'ASC')
       .addOrderBy('o.previsaoEntrega', 'ASC')
@@ -61,7 +71,44 @@ export class OrdensServicoService {
     return qb.getMany();
   }
 
-  async getResumo(): Promise<{
+  private async countComFiltro(
+    filters: ListOrdensFilters | undefined,
+    status: OrdemServicoStatus,
+  ): Promise<number> {
+    const qb = this.repo.createQueryBuilder('o');
+    this.applyListFilters(qb, filters);
+    qb.andWhere('o.status = :st', { st: status });
+    return qb.getCount();
+  }
+
+  private async sumValorComFiltro(
+    filters: ListOrdensFilters | undefined,
+    status: OrdemServicoStatus,
+  ): Promise<number> {
+    const qb = this.repo.createQueryBuilder('o');
+    this.applyListFilters(qb, filters);
+    qb
+      .select('COALESCE(SUM(o.valor), 0)', 'sum')
+      .andWhere('o.status = :st', { st: status });
+    const row = await qb.getRawOne<{ sum: string | number }>();
+    return Number(row?.sum ?? 0);
+  }
+
+  private async sumValorCarteiraComFiltro(
+    filters: ListOrdensFilters | undefined,
+  ): Promise<number> {
+    const qb = this.repo.createQueryBuilder('o');
+    this.applyListFilters(qb, filters);
+    qb
+      .select('COALESCE(SUM(o.valor), 0)', 'sum')
+      .andWhere('o.status IN (:...sts)', {
+        sts: [OrdemServicoStatus.ABERTO, OrdemServicoStatus.FAZENDO],
+      });
+    const row = await qb.getRawOne<{ sum: string | number }>();
+    return Number(row?.sum ?? 0);
+  }
+
+  async getResumo(filters?: ListOrdensFilters): Promise<{
     abertas: number;
     emAndamento: number;
     prontas: number;
@@ -70,44 +117,40 @@ export class OrdensServicoService {
     valorArrecadadoProntos: number;
     valorEmAbertoEAndamento: number;
   }> {
-    const abertas = await this.repo.count({
-      where: { status: OrdemServicoStatus.ABERTO },
-    });
-    const emAndamento = await this.repo.count({
-      where: { status: OrdemServicoStatus.FAZENDO },
-    });
-    const prontas = await this.repo.count({
-      where: { status: OrdemServicoStatus.PRONTO },
-    });
+    const abertas = await this.countComFiltro(
+      filters,
+      OrdemServicoStatus.ABERTO,
+    );
+    const emAndamento = await this.countComFiltro(
+      filters,
+      OrdemServicoStatus.FAZENDO,
+    );
+    const prontas = await this.countComFiltro(
+      filters,
+      OrdemServicoStatus.PRONTO,
+    );
 
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
 
-    const atrasadas = await this.repo
-      .createQueryBuilder('o')
-      .where('o.previsaoEntrega IS NOT NULL')
+    const qbAtr = this.repo.createQueryBuilder('o');
+    this.applyListFilters(qbAtr, filters);
+    const atrasadas = await qbAtr
+      .andWhere('o.previsaoEntrega IS NOT NULL')
       .andWhere('o.previsaoEntrega < :hoje', { hoje: hoje.toISOString() })
       .andWhere('o.status != :pronto', { pronto: OrdemServicoStatus.PRONTO })
       .getCount();
 
-    const totalOrdens = await this.repo.count();
+    const qbTotal = this.repo.createQueryBuilder('o');
+    this.applyListFilters(qbTotal, filters);
+    const totalOrdens = await qbTotal.getCount();
 
-    const rowPronto = await this.repo
-      .createQueryBuilder('o')
-      .select('COALESCE(SUM(o.valor), 0)', 'sum')
-      .where('o.status = :st', { st: OrdemServicoStatus.PRONTO })
-      .getRawOne<{ sum: string | number }>();
-
-    const rowCarteira = await this.repo
-      .createQueryBuilder('o')
-      .select('COALESCE(SUM(o.valor), 0)', 'sum')
-      .where('o.status IN (:...sts)', {
-        sts: [OrdemServicoStatus.ABERTO, OrdemServicoStatus.FAZENDO],
-      })
-      .getRawOne<{ sum: string | number }>();
-
-    const valorArrecadadoProntos = Number(rowPronto?.sum ?? 0);
-    const valorEmAbertoEAndamento = Number(rowCarteira?.sum ?? 0);
+    const valorArrecadadoProntos = await this.sumValorComFiltro(
+      filters,
+      OrdemServicoStatus.PRONTO,
+    );
+    const valorEmAbertoEAndamento =
+      await this.sumValorCarteiraComFiltro(filters);
 
     return {
       abertas,
@@ -139,7 +182,17 @@ export class OrdensServicoService {
     if (dto.placa !== undefined) row.placa = dto.placa;
     if (dto.descricao !== undefined) row.descricao = dto.descricao;
     if (dto.valor !== undefined) row.valor = dto.valor;
-    if (dto.status !== undefined) row.status = dto.status;
+    if (dto.status !== undefined) {
+      if (
+        row.status === OrdemServicoStatus.PRONTO &&
+        dto.status !== OrdemServicoStatus.PRONTO
+      ) {
+        throw new BadRequestException(
+          'Ordem concluída não pode ser reaberta.',
+        );
+      }
+      row.status = dto.status;
+    }
 
     if (dto.dataConclusao !== undefined) {
       row.dataConclusao =

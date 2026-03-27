@@ -319,8 +319,9 @@ export function EditOrdemModal({
               Status
             </span>
             <select
-              className={inputClass}
+              className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-60`}
               value={form.status}
+              disabled={ordem.status === 'pronto'}
               onChange={(e) =>
                 setForm((f) => ({
                   ...f,
@@ -334,6 +335,12 @@ export function EditOrdemModal({
                 </option>
               ))}
             </select>
+            {ordem.status === 'pronto' && (
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                Ordem concluída: o status não pode voltar para aberto ou em
+                andamento.
+              </span>
+            )}
           </label>
 
           {form.status === 'pronto' && (

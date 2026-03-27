@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { DeleteOrdemConfirmModal } from '../components/DeleteOrdemConfirmModal'
 import { EditOrdemModal } from '../components/EditOrdemModal'
-import { OrdensFotosSection } from '../components/OrdensFotosSection'
+import { FlashToast } from '../components/FlashToast'
 import { API_BASE } from '../config/api'
 import {
   inputClass,
@@ -30,13 +31,83 @@ function painelTabFromSearch(v: string | null): PainelTab {
   return 'todos'
 }
 
+type LocationOrdemCriadaState = {
+  ordemCriada?: boolean
+  ordemId?: number
+  flashKey?: string
+}
+
+/** Evita toast duplicado no React Strict Mode (dois efeitos com o mesmo state). */
+let lastOrdemCriadaFlashKey: string | null = null
+
+function DashboardOrdensSkeleton() {
+  return (
+    <ul
+      className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+      aria-busy="true"
+      aria-label="Carregando ordens"
+    >
+      {Array.from({ length: 6 }).map((_, i) => (
+        <li
+          key={i}
+          className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"
+        >
+          <div className="mb-3 flex justify-between gap-2">
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="h-3 w-14 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
+              <div className="h-5 max-w-48 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
+              <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
+            </div>
+            <div className="h-7 w-20 shrink-0 animate-pulse rounded-full bg-slate-100 dark:bg-slate-800" />
+          </div>
+          <div className="mb-3 space-y-2">
+            {Array.from({ length: 6 }).map((__, j) => (
+              <div key={j} className="flex justify-between gap-2">
+                <div className="h-4 w-16 animate-pulse rounded bg-slate-100 dark:bg-slate-800" />
+                <div className="h-4 w-24 animate-pulse rounded bg-slate-100 dark:bg-slate-800" />
+              </div>
+            ))}
+          </div>
+          <div className="mb-4 h-16 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
+          <div className="flex flex-wrap gap-2">
+            <div className="h-10 min-w-20 flex-1 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
+            <div className="h-10 w-24 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 export function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
+  const navigate = useNavigate()
   const painelTab = painelTabFromSearch(searchParams.get('status'))
 
   const [filtCliente, setFiltCliente] = useState('')
   const [filtPlaca, setFiltPlaca] = useState('')
   const [editando, setEditando] = useState<OrdemServico | null>(null)
+  const [ordemParaExcluir, setOrdemParaExcluir] = useState<OrdemServico | null>(
+    null,
+  )
+  const [excluindo, setExcluindo] = useState(false)
+  const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const clearSuccess = useCallback(() => setSuccessMsg(null), [])
+
+  useEffect(() => {
+    const st = location.state as LocationOrdemCriadaState | null
+    if (!st?.ordemCriada || !st.flashKey) return
+    if (lastOrdemCriadaFlashKey === st.flashKey) return
+    lastOrdemCriadaFlashKey = st.flashKey
+    setSuccessMsg(
+      st.ordemId != null ? `Ordem #${st.ordemId} criada.` : 'Ordem criada.',
+    )
+    navigate(
+      { pathname: location.pathname, search: location.search },
+      { replace: true, state: null },
+    )
+  }, [location.pathname, location.search, location.state, navigate])
 
   const filters = useMemo(
     () => ({
@@ -60,6 +131,7 @@ export function DashboardPage() {
   }
 
   async function avancarStatus(o: OrdemServico) {
+    if (o.status === 'pronto') return
     const next = STATUS_NEXT[o.status]
     setError(null)
     try {
@@ -71,22 +143,29 @@ export function DashboardPage() {
       if (!res.ok) throw new Error('Falha ao atualizar status')
       const updated: OrdemServico = await res.json()
       setOrdens((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
+      setSuccessMsg(`Status: ${STATUS_LABEL[next]}.`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao atualizar')
     }
   }
 
-  async function excluir(id: number) {
-    if (!confirm('Excluir esta ordem de serviço?')) return
+  async function confirmarExclusao() {
+    if (!ordemParaExcluir) return
+    const id = ordemParaExcluir.id
     setError(null)
+    setExcluindo(true)
     try {
       const res = await fetch(`${API_BASE}/ordens-servico/${id}`, {
         method: 'DELETE',
       })
       if (!res.ok) throw new Error('Falha ao excluir')
       setOrdens((prev) => prev.filter((x) => x.id !== id))
+      setOrdemParaExcluir(null)
+      setSuccessMsg('Ordem excluída.')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao excluir')
+    } finally {
+      setExcluindo(false)
     }
   }
 
@@ -97,6 +176,7 @@ export function DashboardPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
+      <FlashToast message={successMsg} onDismiss={clearSuccess} />
       {error && (
         <div
           role="alert"
@@ -240,17 +320,25 @@ export function DashboardPage() {
         </div>
 
         {loading ? (
-          <p className="text-slate-500">Carregando…</p>
+          <DashboardOrdensSkeleton />
         ) : ordensExibidas.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-slate-300 bg-white/50 px-4 py-8 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-900/30">
-            {filtCliente || filtPlaca
-              ? painelTab === 'todos'
-                ? 'Nenhuma ordem encontrada com os filtros atuais.'
-                : 'Nenhuma ordem encontrada com os filtros atuais neste status.'
-              : painelTab === 'todos'
-                ? 'Nenhuma ordem ainda.'
-                : `Nenhuma ordem com status “${STATUS_LABEL[painelTab]}”.`}
-          </p>
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white/50 px-4 py-8 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-900/30">
+            <p className="mb-4">
+              {filtCliente || filtPlaca
+                ? painelTab === 'todos'
+                  ? 'Nenhuma ordem encontrada com os filtros atuais.'
+                  : 'Nenhuma ordem encontrada com os filtros atuais neste status.'
+                : painelTab === 'todos'
+                  ? 'Nenhuma ordem ainda.'
+                  : `Nenhuma ordem com status “${STATUS_LABEL[painelTab]}”.`}
+            </p>
+            <Link
+              to="/nova"
+              className="inline-flex rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+            >
+              Abrir nova ordem
+            </Link>
+          </div>
         ) : (
           <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {ordensExibidas.map((o) => (
@@ -315,13 +403,6 @@ export function DashboardPage() {
                 <p className="mb-4 flex-1 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:bg-slate-950 dark:text-slate-300">
                   {o.descricao}
                 </p>
-                <div className="mb-4">
-                  <OrdensFotosSection
-                    ordemId={o.id}
-                    apiBase={API_BASE}
-                    onChange={() => void load()}
-                  />
-                </div>
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -350,16 +431,18 @@ export function DashboardPage() {
                   >
                     Editar
                   </button>
+                  {o.status !== 'pronto' && (
+                    <button
+                      type="button"
+                      onClick={() => void avancarStatus(o)}
+                      className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                    >
+                      Avançar: {STATUS_LABEL[STATUS_NEXT[o.status]]}
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => void avancarStatus(o)}
-                    className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
-                  >
-                    Avançar: {STATUS_LABEL[STATUS_NEXT[o.status]]}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void excluir(o.id)}
+                    onClick={() => setOrdemParaExcluir(o)}
                     className="rounded-xl border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40"
                   >
                     Excluir
@@ -377,10 +460,22 @@ export function DashboardPage() {
           apiBase={API_BASE}
           onClose={() => setEditando(null)}
           onSaved={() => {
+            setSuccessMsg('Ordem salva.')
             void load()
           }}
           onFotosChange={() => void load()}
           onError={(msg) => setError(msg || null)}
+        />
+      )}
+
+      {ordemParaExcluir && (
+        <DeleteOrdemConfirmModal
+          ordem={ordemParaExcluir}
+          deleting={excluindo}
+          onClose={() => {
+            if (!excluindo) setOrdemParaExcluir(null)
+          }}
+          onConfirm={() => void confirmarExclusao()}
         />
       )}
     </main>

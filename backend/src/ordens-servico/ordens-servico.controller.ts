@@ -60,8 +60,23 @@ export class OrdensServicoController {
   }
 
   @Get('resumo')
-  getResumo() {
-    return this.service.getResumo();
+  getResumo(
+    @Query('cliente') cliente?: string,
+    @Query('placa') placa?: string,
+    @Query('status') status?: string,
+  ) {
+    let st: OrdemServicoStatus | undefined;
+    if (status !== undefined && status !== '') {
+      if (
+        !Object.values(OrdemServicoStatus).includes(status as OrdemServicoStatus)
+      ) {
+        throw new BadRequestException(
+          'Parâmetro status deve ser: aberto, fazendo ou pronto',
+        );
+      }
+      st = status as OrdemServicoStatus;
+    }
+    return this.service.getResumo({ cliente, placa, status: st });
   }
 
   @Get('export/pdf')

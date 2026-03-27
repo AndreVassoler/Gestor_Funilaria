@@ -118,8 +118,9 @@ export function RelatoriosDashboard({ resumo, loading }: Props) {
           Dashboard
         </h2>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Visão geral do que está na oficina: quantidade por status, atrasos e
-          valores (estimados cadastrados nas OS).
+          Quantidade por status, atrasos e valores cadastrados nas OS. Na página
+          de relatórios, estes números acompanham os filtros de cliente, placa e
+          status; no painel principal, acompanham a busca e a aba de status.
         </p>
       </div>
 

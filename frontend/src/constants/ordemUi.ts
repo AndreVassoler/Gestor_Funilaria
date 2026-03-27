@@ -10,10 +10,13 @@ export const STATUS_LABEL: Record<OrdemServicoStatus, string> = {
   pronto: 'Pronto',
 }
 
-export const STATUS_NEXT: Record<OrdemServicoStatus, OrdemServicoStatus> = {
+/** Próximo status no fluxo rápido do painel (ordem pronta não tem “avançar”). */
+export const STATUS_NEXT: Record<
+  Exclude<OrdemServicoStatus, 'pronto'>,
+  OrdemServicoStatus
+> = {
   aberto: 'fazendo',
   fazendo: 'pronto',
-  pronto: 'aberto',
 }
 
 export const STATUS_RING: Record<OrdemServicoStatus, string> = {

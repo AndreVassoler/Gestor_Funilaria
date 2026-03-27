@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Layout } from './components/Layout'
+import { AgendaPage } from './pages/AgendaPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { NovaOrdemPage } from './pages/NovaOrdemPage'
 import { RelatoriosPage } from './pages/RelatoriosPage'
@@ -11,6 +12,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/nova" element={<NovaOrdemPage />} />
+          <Route path="/agenda" element={<AgendaPage />} />
           <Route path="/relatorios" element={<RelatoriosPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
