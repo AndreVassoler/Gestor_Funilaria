@@ -36,14 +36,14 @@ export class OrdemServico {
   @Column({ type: 'real' })
   valor: number;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true })
   dataAbertura: Date | null;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true })
   previsaoEntrega: Date | null;
 
   /** Preenchida ao marcar OS como pronta; base para receita por período no relatório fiscal. */
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true })
   dataConclusao: Date | null;
 
   @Column({

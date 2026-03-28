@@ -8,12 +8,12 @@ Monorepo com duas pastas principais:
 
 | Pasta      | Descrição                                      |
 | ---------- | ---------------------------------------------- |
-| `backend/` | API REST em **NestJS** + **TypeORM** + SQLite |
+| `backend/` | API REST em **NestJS** + **TypeORM** + **PostgreSQL** |
 | `frontend/`| Interface em **React 19** + **Vite** + **Tailwind CSS** |
 
 ## Tecnologias
 
-- **Backend:** NestJS 11, TypeORM, SQLite, Multer (upload de fotos), PDFKit / ExcelJS (relatórios e exportações)
+- **Backend:** NestJS 11, TypeORM, PostgreSQL (`pg`), Multer (upload de fotos), PDFKit / ExcelJS (relatórios e exportações)
 - **Frontend:** React 19, React Router, Recharts, Vite 8, Tailwind CSS 4
 
 ## Pré-requisitos
@@ -33,7 +33,7 @@ npm run start:dev
 
 A API sobe em **http://localhost:3000** (ou na porta definida pela variável `PORT`).
 
-- Banco SQLite: arquivo `backend/database.sqlite` (criado na primeira execução; está no `.gitignore`).
+- **Banco:** PostgreSQL. Copie `backend/.env.example` para `backend/.env` e preencha `DATABASE_URL` (pode ser instância local, Docker ou [Supabase](https://supabase.com/) — o produto expõe um Postgres gerenciado). Com TLS (nuvem), não defina `DATABASE_SSL` ou deixe diferente de `false`. Postgres local sem SSL: `DATABASE_SSL=false`.
 - Fotos: servidas em `/uploads/` a partir da pasta `backend/uploads/` (conteúdo ignorado pelo Git, exceto `.gitkeep`).
 
 ### 2. Frontend
@@ -48,6 +48,10 @@ npm run dev
 
 O Vite costuma usar **http://localhost:5173**. O frontend chama a API em `http://localhost:3000` por padrão.
 
+### Variáveis de ambiente (backend)
+
+Obrigatório: `backend/.env` com pelo menos `DATABASE_URL` (veja `backend/.env.example`).
+
 ### Variáveis de ambiente (frontend)
 
 Opcional: criar `frontend/.env` com a URL da API se não for o padrão:
@@ -55,6 +59,10 @@ Opcional: criar `frontend/.env` com a URL da API se não for o padrão:
 ```env
 VITE_API_URL=http://localhost:3000
 ```
+
+## CI (GitHub Actions)
+
+No push ou pull request para `main`, o workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) sobe **PostgreSQL 16** para o job do backend, define `DATABASE_SSL=false` e roda `build`, `test` e `test:e2e`. O frontend roda `npm ci` e `npm run build` em job separado.
 
 ## Scripts úteis
 
@@ -64,6 +72,7 @@ VITE_API_URL=http://localhost:3000
 - `npm run build` — compila para `dist/`
 - `npm run start:prod` — executa `dist/main` (após `build`)
 - `npm run test` — testes unitários
+- `npm run test:e2e` — testes e2e (exige `DATABASE_URL` apontando para um PostgreSQL acessível, ex.: container local)
 
 **Frontend** (`frontend/`)
 

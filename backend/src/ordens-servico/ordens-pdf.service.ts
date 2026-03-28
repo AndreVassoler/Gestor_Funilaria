@@ -20,7 +20,34 @@ function fmtData(d: Date | null | undefined) {
   if (!d) return '—';
   const x = d instanceof Date ? d : new Date(d);
   if (Number.isNaN(x.getTime())) return '—';
-  return x.toLocaleDateString('pt-BR');
+  const utcMid =
+    x.getUTCHours() === 0 &&
+    x.getUTCMinutes() === 0 &&
+    x.getUTCSeconds() === 0 &&
+    x.getUTCMilliseconds() === 0;
+  if (utcMid) {
+    const dd = String(x.getUTCDate()).padStart(2, '0');
+    const mm = String(x.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = String(x.getUTCFullYear());
+    return `${dd}/${mm}/${yyyy}`;
+  }
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(x);
+}
+
+function fmtDataHoraBr(now: Date) {
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(now);
 }
 
 function statusLabel(s: OrdemServicoStatus) {
@@ -304,10 +331,7 @@ export class OrdensPdfService {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
       this.drawPdfPageBanner(doc, `Ordem de serviço — ${FUNILARIA_NOME}`, [
-        `Documento para assinatura · ${new Date().toLocaleString('pt-BR', {
-          dateStyle: 'short',
-          timeStyle: 'short',
-        })}`,
+        `Documento para assinatura · ${fmtDataHoraBr(new Date())}`,
       ]);
       this.drawOrdemPage(doc, o, fotos, { assinatura: true });
       doc.end();
@@ -360,7 +384,7 @@ export class OrdensPdfService {
 
       this.drawPdfPageBanner(doc, `Relatório operacional — ${FUNILARIA_NOME}`, [
         'Lista detalhada por ordem de serviço',
-        `Gerado em ${new Date().toLocaleString('pt-BR')}`,
+        `Gerado em ${fmtDataHoraBr(new Date())}`,
       ]);
 
       if (!rows.length) {
@@ -409,15 +433,15 @@ export class OrdensPdfService {
     if (escopo === 'geral') return;
     if (escopo === 'ano' && ano != null) {
       qb.andWhere(
-        `(strftime('%Y', o.dataAbertura) = :fAno OR (o.dataConclusao IS NOT NULL AND strftime('%Y', o.dataConclusao) = :fAno))`,
-        { fAno: String(ano) },
+        `(EXTRACT(YEAR FROM o.dataAbertura) = :fAno OR (o.dataConclusao IS NOT NULL AND EXTRACT(YEAR FROM o.dataConclusao) = :fAno))`,
+        { fAno: ano },
       );
       return;
     }
     if (escopo === 'mes' && ano != null && mes != null) {
       const ym = `${ano}-${String(mes).padStart(2, '0')}`;
       qb.andWhere(
-        `(strftime('%Y-%m', o.dataAbertura) = :fYm OR (o.dataConclusao IS NOT NULL AND strftime('%Y-%m', o.dataConclusao) = :fYm))`,
+        `(TO_CHAR(o.dataAbertura, 'YYYY-MM') = :fYm OR (o.dataConclusao IS NOT NULL AND TO_CHAR(o.dataConclusao, 'YYYY-MM') = :fYm))`,
         { fYm: ym },
       );
     }
@@ -443,13 +467,13 @@ export class OrdensPdfService {
 
     if (opts.escopo === 'ano' && opts.ano != null) {
       qb.andWhere(
-        `strftime('%Y', datetime(COALESCE(o.dataConclusao, o.dataAbertura))) = :y`,
-        { y: String(opts.ano) },
+        `EXTRACT(YEAR FROM COALESCE(o.dataConclusao, o.dataAbertura)) = :y`,
+        { y: opts.ano },
       );
     } else if (opts.escopo === 'mes' && opts.ano != null && opts.mes != null) {
       const ym = `${opts.ano}-${String(opts.mes).padStart(2, '0')}`;
       qb.andWhere(
-        `strftime('%Y-%m', datetime(COALESCE(o.dataConclusao, o.dataAbertura))) = :ym`,
+        `TO_CHAR(COALESCE(o.dataConclusao, o.dataAbertura), 'YYYY-MM') = :ym`,
         { ym },
       );
     }
@@ -549,10 +573,7 @@ export class OrdensPdfService {
         `Relatório fiscal e gerencial — ${FUNILARIA_NOME}`,
         [
           this.tituloPeriodoRelatorio(opts),
-          `Gerado em ${new Date().toLocaleString('pt-BR', {
-            dateStyle: 'short',
-            timeStyle: 'short',
-          })}`,
+          `Gerado em ${fmtDataHoraBr(new Date())}`,
         ],
       );
 
@@ -766,10 +787,7 @@ export class OrdensPdfService {
     ws.getCell('A2').alignment = { vertical: 'middle', horizontal: 'center' };
 
     ws.mergeCells('A3:G3');
-    ws.getCell('A3').value = `Gerado em ${new Date().toLocaleString('pt-BR', {
-      dateStyle: 'short',
-      timeStyle: 'short',
-    })}`;
+    ws.getCell('A3').value = `Gerado em ${fmtDataHoraBr(new Date())}`;
     ws.getCell('A3').fill = fillIndigoSoft;
     ws.getCell('A3').font = { size: 10, color: { argb: 'FF475569' } };
     ws.getCell('A3').alignment = { vertical: 'middle', horizontal: 'center' };

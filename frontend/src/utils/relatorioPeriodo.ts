@@ -1,4 +1,5 @@
 import type { OrdemServico } from '../types/ordem'
+import { formatDateBR } from './ordemForm'
 
 export type PresetPeriodoRelatorio =
   | 'todas'
@@ -124,7 +125,7 @@ export function labelPeriodoAmigavel(
       return 'Ano calendário corrente (abertura)'
     case 'personalizado':
       return personalizadoDe && personalizadoAte
-        ? `De ${personalizadoDe} a ${personalizadoAte} (abertura)`
+        ? `De ${formatDateBR(personalizadoDe)} a ${formatDateBR(personalizadoAte)} (abertura)`
         : 'Período personalizado (defina início e fim)'
     default:
       return ''

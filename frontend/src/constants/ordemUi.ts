@@ -1,7 +1,12 @@
 import type { OrdemServicoStatus } from '../types/ordem'
 
+/** Data de hoje no fuso local (evita virar o dia seguinte com toISOString em UTC). */
 export function hojeInputDate() {
-  return new Date().toISOString().slice(0, 10)
+  const n = new Date()
+  const y = n.getFullYear()
+  const m = String(n.getMonth() + 1).padStart(2, '0')
+  const d = String(n.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }
 
 export const STATUS_LABEL: Record<OrdemServicoStatus, string> = {

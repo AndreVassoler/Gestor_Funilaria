@@ -111,20 +111,63 @@ export function titleCaseWords(s: string) {
     .join(' ')
 }
 
+/** YYYY-MM-DD para input type="date" (data local quando há horário na ISO). */
 export function toInputDate(iso?: string | null) {
   if (!iso) return ''
-  return iso.slice(0, 10)
+  const s = String(iso).trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  const rest = s.slice(10)
+  if (
+    rest === '' ||
+    /^T00:00:00(\.\d+)?Z$/i.test(rest) ||
+    /^T00:00:00(\.\d+)?\+00:00$/i.test(rest)
+  ) {
+    return s.slice(0, 10)
+  }
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
+/**
+ * Exibe data como dd/mm/aaaa. Datas só-dia vindas da API (meia-noite UTC)
+ * usam o calendário YYYY-MM-DD da string, evitando dia errado no fuso BR.
+ */
 export function formatDateBR(iso?: string | null) {
   if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
+  const s = String(iso).trim()
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
+  if (!m) {
+    const d = new Date(s)
+    if (Number.isNaN(d.getTime())) return '—'
+    return new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(d)
+  }
+  const [, y, mo, d] = m
+  const rest = s.slice(10)
+  const isDateOnly = s.length === 10
+  const isUtcMidnight =
+    rest === '' ||
+    /^T00:00:00(\.\d+)?Z$/i.test(rest) ||
+    /^T00:00:00(\.\d+)?\+00:00$/i.test(rest)
+  if (isDateOnly || isUtcMidnight) {
+    return `${d}/${mo}/${y}`
+  }
+  const dt = new Date(s)
+  if (Number.isNaN(dt.getTime())) return '—'
   return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
-  }).format(d)
+  }).format(dt)
 }
 
 export function validarPlacaOuErro(placaDisplay: string): string | null {

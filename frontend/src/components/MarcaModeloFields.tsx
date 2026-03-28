@@ -155,7 +155,7 @@ export function MarcaModeloFields({
             role="combobox"
             aria-expanded={openModelo && !modeloBloqueado}
             aria-controls={`${idBase}-modelo-list`}
-            aria-readOnly={modeloBloqueado}
+            aria-readonly={modeloBloqueado}
             className={`${inputClass} relative z-10 ${modeloBloqueado ? 'cursor-not-allowed bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400' : ''}`}
             value={modelo}
             onChange={(e) => {

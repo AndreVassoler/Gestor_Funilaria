@@ -1,5 +1,6 @@
 import type { OrdemServico } from '../types/ordem'
 import { STATUS_LABEL } from '../constants/ordemUi'
+import { formatDateBR } from './ordemForm'
 
 function csvCell(s: string): string {
   const t = s.replace(/"/g, '""')
@@ -35,9 +36,9 @@ export function ordensToCsvSemicolon(ordens: OrdemServico[]): string {
       o.placa ?? '',
       STATUS_LABEL[o.status] ?? o.status,
       String(o.valor ?? 0).replace('.', ','),
-      o.dataAbertura?.slice(0, 10) ?? '',
-      o.previsaoEntrega?.slice(0, 10) ?? '',
-      o.dataConclusao?.slice(0, 10) ?? '',
+      o.dataAbertura ? formatDateBR(o.dataAbertura) : '',
+      o.previsaoEntrega ? formatDateBR(o.previsaoEntrega) : '',
+      o.dataConclusao ? formatDateBR(o.dataConclusao) : '',
       o.descricao ?? '',
     ].map(csvCell)
     lines.push(row.join(';'))

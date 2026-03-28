@@ -1,3 +1,6 @@
+import { config as loadEnv } from 'dotenv';
+loadEnv();
+
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Agendamento } from './agendamentos/agendamento.entity';
@@ -7,11 +10,22 @@ import { OrdemServicoFoto } from './ordens-servico/ordem-servico-foto.entity';
 import { OrdemServico } from './ordens-servico/ordem-servico.entity';
 import { OrdensServicoModule } from './ordens-servico/ordens-servico.module';
 
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+  throw new Error(
+    'Defina DATABASE_URL com a URI do PostgreSQL (veja backend/.env.example).',
+  );
+}
+
+/** Supabase e a maioria dos hosts em nuvem exigem TLS; desligue só em Postgres local sem SSL. */
+const useSsl = process.env.DATABASE_SSL !== 'false';
+
 @Module({
   imports: [
     TypeOrmModule.forRoot({
-      type: 'sqlite',
-      database: 'database.sqlite',
+      type: 'postgres',
+      url: databaseUrl,
+      ssl: useSsl ? { rejectUnauthorized: false } : false,
       entities: [
         OrdemServico,
         OrdemServicoFoto,
@@ -19,6 +33,8 @@ import { OrdensServicoModule } from './ordens-servico/ordens-servico.module';
         GoogleCalendarToken,
       ],
       synchronize: true,
+      retryAttempts: 3,
+      retryDelay: 3000,
     }),
     OrdensServicoModule,
     AgendamentosModule,
