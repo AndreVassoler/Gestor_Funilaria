@@ -1,3 +1,0 @@
-# Garante Node/npm na imagem (evita "npm: not found" quando o plano Nixpacks fica incompleto).
-[variables]
-NIXPACKS_NODE_VERSION = "22"
