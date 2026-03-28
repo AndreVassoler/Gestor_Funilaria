@@ -1,0 +1,11 @@
+# Railway: crie um serviço com Root Directory = frontend
+# Defina VITE_API_URL = URL pública do backend (ex.: https://api-xxx.up.railway.app) ANTES do build.
+
+[build]
+builder = "nixpacks"
+buildCommand = "npm ci && npm run build"
+
+[deploy]
+startCommand = "npm exec serve -- -s dist -l tcp://0.0.0.0:$PORT"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
